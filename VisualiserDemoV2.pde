@@ -1,3 +1,5 @@
+
+
 import ddf.minim.*;
 import ddf.minim.analysis.*;
 import ddf.minim.effects.*;
@@ -21,16 +23,15 @@ ControlP5 cp5;
 SyphonServer server;   //this outputs to syphon -- http://syphon.v002.info/
 Minim minim;
 AudioInput in;
-PGraphics out;
+PGraphics threeD; // seperate PGraphics for 3D to allow background trails;
+PGraphics out;    // main output PGraphics;
 Visualiser visuals;
 
-float gain, fade, startZ;
+float gain, fade, startZ, speed, del;
 
 
-int hRez, delay;
+int hRez;
 float alphafade, initialAlpha, strk;
-
-Slider2D xypad;
 
 void settings(){       //Has to be used for syphon in processing -- https://processing.org/reference/settings_.html
   
@@ -42,43 +43,94 @@ void settings(){       //Has to be used for syphon in processing -- https://proc
 void setup(){
   cp5 = new ControlP5(this);
   server = new SyphonServer(this, "Syphon Output"); //outputs as 'Syphon Output'. Look for this in syphon recorder or whatever else you use.
-  out = createGraphics(1280,720,P3D);
-  minim = new Minim(this);
-  in = minim.getLineIn(Minim.STEREO, 512);
-  visuals = new Visualiser();
-  gain = 500;
-  p5setup();
+  threeD = createGraphics(1280,720,P3D);
+  out = createGraphics(1280,720,P2D); //Size of output and renderer
+  minim = new Minim(this);                          //Minim constructor
+  in = minim.getLineIn();          //line in options (Stereo, buffersize is 512)
+  visuals = new Visualiser();                       //Construct visualiser                         
+  p5setup();                                        //UI element setup function. Check bottom of page
+
 }
 
 void draw(){
+  //stuff prefixed with "out" is going to syphon and the preview window. 
+  //everything else has no prefix
   background(20);
-  out.beginDraw();
-    out.background(0, fade);
-    //out.translate(out.width/2, out.height/2);
+  threedee();
+  out.beginDraw();            //since out is it's own PGraphics it needs its own draw loop.
+                              //For longer loops or multiple PGraphics I usually 
+                              //do something like this to keep thing tidy:
+                               /*
+                                  void draw(){
+                                    [code]
+                                    ...
+                                    outDraw();
+                                    ...
+                                    [more code]
+                                  }
+                                  void outDraw(){
+                                    out.beginDraw();
+                                    .....
+                                    your code goes here
+                                    .....
+                                    out.endDraw();
+                                  }
+                               */
+                               
+                               
+  //Blend modes are a key part of processing and digital art.\\
+ //Learn to use them and your life will be inifinitely easier.\\
+                          
+    out.blendMode(BLEND); // default blendmode
+    out.pushMatrix();                           
+    out.pushStyle();
+    
+    
+    out.fill(0, fade);  //black background with float fade as alpha channel
+    out.rect(0,0,out.width,out.height);
     out.noStroke();
-    visuals.run();;
-  out.endDraw();
-  image(out,0,0,width, (width/16)*9);
-  server.sendImage(out);
+    out.popStyle();
+    out.popMatrix();
+    out.translate(out.width/2,out.height/2);
+    out.pushMatrix();
+    out.blendMode(SCREEN); //black is transparant
+    out.image(threeD,-out.width/2,-out.height/2);
+    out.rotate(PI);
+    out.image(threeD,-out.width/2,-out.height/2);
+    out.popMatrix();
+  out.endDraw();              //End of out's draw loop
+  image(out,0,0,width, (width/16)*9);    //preview image of out in main window. handy if you want to see stuff before using syphon for live stuff
+  server.sendImage(out);                 //sends out to syphon
+}
+
+void threedee(){
+  threeD.beginDraw();
+  threeD.background(0);
+  visuals.run(); //single function for all functions in visuals. easer on my brain;
+  threeD.endDraw();
 }
 
 
-float speed;
-
+//Visualiser class
 class Visualiser{
-  ArrayList<Row> rows;
-  int numbars;
-  float margin;
+  float delayCount, cDelay;
+  ArrayList<Row> rows;  //the list of all those audio-reactive lines. Arraylist of Row classes called rows.
+                        //If you don't know what an ArrayList is look it up. They're very handy.
+                        
+  int numbars;          //number of bars
+          
   Visualiser(){
-    delay = 60;
+    delayCount = 0;
     numbars = 10;
-    margin = 5;
-    rows = new ArrayList<Row>();
+    rows = new ArrayList<Row>(); //constructing rows as an ArrayList of Row classes
+    cDelay = del;
   }
   
   void create(){
-    if(frameCount % delay == 0){
-      rows.add(new Row(out.width, startZ));
+    if(millis() - delayCount >= del){                 //delay for constructing new Row in rows
+      rows.add(new Row(threeD.width, startZ));  //constructs new row and passes in arguments
+      delayCount = millis();
+      //println("delay: " + delay);
     }
   }
   
@@ -135,17 +187,17 @@ class Row{
   }
   
   void create(){
-    out.beginShape();
+    threeD.beginShape();
     for(int i = gains.length-1; i > 0; i--){
-      out.pushMatrix(); out.pushStyle();
-        out.translate(w/4,0);
-        out.stroke(brght - (255-alpha));
-        out.strokeWeight(strk);
-        out.strokeCap(ROUND);
-        out.line( -pieceW * i, out.height +( gains[i] * gain), z, -pieceW*(i-1), out.height +( gains[i-1] * gain),z);
-        out.line(  pieceW * i, out.height +( gains[i] * gain), z,  pieceW*(i-1), out.height +( gains[i-1] * gain),z);
+      threeD.pushMatrix(); threeD.pushStyle();
+        threeD.translate(w/4,0);
+        threeD.stroke(brght - (255-alpha));
+        threeD.strokeWeight(strk);
+        threeD.strokeCap(ROUND);
+        threeD.line( -pieceW * i, threeD.height +( gains[i] * gain), z, -pieceW*(i-1), threeD.height +( gains[i-1] * gain),z);
+        threeD.line(  pieceW * i, threeD.height +( gains[i] * gain), z,  pieceW*(i-1), threeD.height +( gains[i-1] * gain),z);
         
-      out.popMatrix(); out.popStyle();
+      threeD.popMatrix(); threeD.popStyle();
     }
   }
   
@@ -170,7 +222,24 @@ class Row{
 
 
 
-void p5setup(){ 
+void p5setup(){
+  
+  /*
+    These variable initialisations are failsafes.
+    cp5s setValue() doesn't initialise variables, it just sets the default value on the ui element;
+    I include them in my p5Setup function to keep everything clean;
+  */
+  hRez = 50;
+  gain = 1000;
+  fade = 255;
+  alphafade = 1;
+  speed = 2;
+  del = 500;
+  initialAlpha = 0;
+  strk = 0;
+  startZ = 0;
+  
+  
   cp5.addSlider("hRez")
     .setPosition(10, height*0.6)
     .setSize(100, 10)
@@ -195,7 +264,7 @@ void p5setup(){
   cp5.addSlider("alphafade")
     .setPosition(10, height*0.6 + 90)
     .setSize(100, 10)
-    .setRange(0,2)
+    .setRange(0,5)
     .setValue(1)
     ;
     
@@ -208,11 +277,11 @@ void p5setup(){
     
     
     
-  cp5.addSlider("delay")
+  cp5.addSlider("del")
+    .setLabel("DELAY")
     .setPosition(200, height*0.6)
     .setSize(100, 10)
-    .setRange(20,240)
-    .setValue(60)
+    .setRange(10,4000)
     ;
     
   cp5.addSlider("initialAlpha")

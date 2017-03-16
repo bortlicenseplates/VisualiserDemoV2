@@ -82,30 +82,46 @@ void draw(){
  //Learn to use them and your life will be inifinitely easier.\\
                           
     out.blendMode(BLEND); // default blendmode
-    out.pushMatrix();                           
-    out.pushStyle();
     
-    
+    out.pushMatrix();//constrain transforms to this push/pop                        
+    out.pushStyle(); //constrain styles to this push/pop
     out.fill(0, fade);  //black background with float fade as alpha channel
-    out.rect(0,0,out.width,out.height);
-    out.noStroke();
+    out.noStroke(); //no border on bg rect
+    out.rect(0,0,out.width,out.height); //background() doesn't accept alpha channel so we draw a rectagle;
     out.popStyle();
     out.popMatrix();
-    out.translate(out.width/2,out.height/2);
-    out.pushMatrix();
+    
+    
+    out.translate(out.width/2,out.height/2);//centre canvas is now 0,0
+    out.pushMatrix();//contrain transforms
     out.blendMode(SCREEN); //black is transparant
-    out.image(threeD,-out.width/2,-out.height/2);
-    out.rotate(PI);
-    out.image(threeD,-out.width/2,-out.height/2);
+    
+    out.image(threeD,-out.width/2,-out.height/2); //draw pgraphics threeD
+    
+    out.rotate(PI);                               //rotate canvas 180 degrees or pi radians.
+                                                  //rotate(degrees(180)); does the same thing
+                                                  //everything drawn so far is now flipped on x and y
+    
+    out.image(threeD,-out.width/2,-out.height/2); //draw same pgraphics threeD as before.
+                                                  //because everything previous has been rotated
+                                                  //we can draw this right way up and use default width and height
+                                              
     out.popMatrix();
   out.endDraw();              //End of out's draw loop
+  
+  
   image(out,0,0,width, (width/16)*9);    //preview image of out in main window. handy if you want to see stuff before using syphon for live stuff
   server.sendImage(out);                 //sends out to syphon
 }
 
-void threedee(){
-  threeD.beginDraw();
-  threeD.background(0);
+void threedee(){ //separate canvase for 3d things because of background z position being 0.
+                 // if we were to draw our 3d stuff on the same canvas we couldn't
+                 // use a rect() funcion because our objects would just pass straight through it
+                 // and be hidden by it. we can't use background either because it has no alpha channel.
+  threeD.beginDraw(); 
+  threeD.background(0); //this is only for this PGraphics. We still need a background
+                        //but our motion blur is coming from PGraphics out and the SCREEN blendmode
+  
   visuals.run(); //single function for all functions in visuals. easer on my brain;
   threeD.endDraw();
 }
@@ -113,40 +129,35 @@ void threedee(){
 
 //Visualiser class
 class Visualiser{
-  float delayCount, cDelay;
+  float delayCount;
   ArrayList<Row> rows;  //the list of all those audio-reactive lines. Arraylist of Row classes called rows.
                         //If you don't know what an ArrayList is look it up. They're very handy.
                         
-  int numbars;          //number of bars
           
   Visualiser(){
-    delayCount = 0;
-    numbars = 10;
+    delayCount = 0;  //initialise counter
     rows = new ArrayList<Row>(); //constructing rows as an ArrayList of Row classes
-    cDelay = del;
   }
   
   void create(){
     if(millis() - delayCount >= del){                 //delay for constructing new Row in rows
       rows.add(new Row(threeD.width, startZ));  //constructs new row and passes in arguments
-      delayCount = millis();
-      //println("delay: " + delay);
+      delayCount = millis(); //set delay to current milisecond.
     }
   }
   
-  void update(){
+  void update(){ //removes dead bars.
     for (int i = 0; i < rows.size(); i++){
       rows.get(i).run();
-      if((rows.get(i).alpha <= 0 || 
-          rows.get(i).z < -10000) && 
-          rows.size() > 0){
-        rows.remove(rows.get(i));
+      if((rows.get(i).alpha <= 0 || // "||" means OR
+          rows.get(i).z < -10000) && // "&&" means AND
+          rows.size() > 0){ //make sure there's something to remove, just in case.
+        rows.remove(rows.get(i)); //remove the bar at i.
       }
     }
   }
   
-  void run(){
-    
+  void run(){ //put all functions youwish to run in draw() in here and just call this instead.
     create();
     update();
   }
@@ -163,54 +174,69 @@ class Visualiser{
 
 
 class Row{
-  float[] gains;
+  float[] gains; //array of volumes
+  
   float w,pieceW,z;
   float alpha;
   float afade;
-  float brght;
   Row(float w, float z){
-    brght = initialAlpha;
-    this.w = w*2;
-    gains = new float[hRez];
-    init();
-    pieceW = w/gains.length;
-    this.z = z;
-    alpha = 255;
-    afade = alphafade;
+    alpha = initialAlpha; // set the initial alpha to the value if inital alpha slider.
+    
+    this.w = w*2;//make the width double the inputted value
+    
+   
+    
+    initGains(); // function to initialise gains array
+    
+    pieceW = w/gains.length; //set the length of each line in the row
+    this.z = z; //set initial z position
+    afade = alphafade; //set fadespeed to slider value
   }
+  
+  void initGains(){
+    gains = new float[hRez]; //set length of array to amount of bands being used
+    for(int i = 0; i < gains.length; i++){
+      int buf = (int)Math.floor(in.bufferSize() / gains.length) * i; //only use values at i * buffer / hRez
+      gains[i] = in.mix.get(buf); //set value at i to buf;
+    }
+  }
+  
+  
+  
   float volume(int freq){
-    return (in.mix.get(freq)-0.5) * gain;
+    return in.mix.get(freq) * gain; //returns value at position "freq" of buffer
+                                    //and multiplies it by gain slider value
   }
-  void run(){
+  
+  void run(){ //everything in one function
     create();
     update();
   }
   
   void create(){
-    threeD.beginShape();
-    for(int i = gains.length-1; i > 0; i--){
-      threeD.pushMatrix(); threeD.pushStyle();
-        threeD.translate(w/4,0);
-        threeD.stroke(brght - (255-alpha));
-        threeD.strokeWeight(strk);
-        threeD.strokeCap(ROUND);
-        threeD.line( -pieceW * i, threeD.height +( gains[i] * gain), z, -pieceW*(i-1), threeD.height +( gains[i-1] * gain),z);
-        threeD.line(  pieceW * i, threeD.height +( gains[i] * gain), z,  pieceW*(i-1), threeD.height +( gains[i-1] * gain),z);
+    for(int i = 0; i < gains.length-1; i++){
+      threeD.pushMatrix(); threeD.pushStyle();//contain transforms and styles
+        threeD.translate(w/4,0);//translate to centre
+        threeD.stroke(alpha); //set stroke color to alpha
+        threeD.strokeWeight(strk); //set strokeWeight to slider value
         
+        // Lines are drawn from one point on the buffer to the next point on the buffer
+        // using pieceW * i and get their height from gains[i]. Their z position is gotten from
+        // float z, which is changed in update();
+        
+        //everything is drawn from the centre outwards.
+        
+        threeD.line( pieceW * i, threeD.height +( gains[i] * gain), z, pieceW*(i+1), threeD.height +( gains[i+1] * gain),z); //draw line from centre to left
+        threeD.line(-pieceW * i, threeD.height +( gains[i] * gain), z,-pieceW*(i+1), threeD.height +( gains[i+1] * gain),z); //draw line from centre to right
       threeD.popMatrix(); threeD.popStyle();
     }
   }
   
-  void init(){
-    for(int i = 0; i < gains.length; i++){
-      int buf = (int)Math.floor(in.bufferSize() / gains.length) * i;
-      gains[i] = in.mix.get(buf);
-    }
-  }
+
   
   void update(){
-    z-= speed;
-    alpha -= alphafade;
+    z-= speed; //z = z - slider value
+    alpha -= alphafade; // alpha = alpha - slider value
   }
 }
   
@@ -222,14 +248,17 @@ class Row{
 
 
 
-void p5setup(){
+void p5setup(){ //this is called in setup() and initialises all my ui elements.
+                //I could declare them all in setup() but this looks messy and ugly
+                //so I use a function instead.
   
   /*
     These variable initialisations are failsafes.
-    cp5s setValue() doesn't initialise variables, it just sets the default value on the ui element;
-    I include them in my p5Setup function to keep everything clean;
+    cp5s setValue() works 99% of the time, but there's always that chance it'll decide
+    it hates you and wants your life to be miserable.
+    I include them in p5setup() to keep setup() clean
   */
-  hRez = 50;
+  hRez = 100;
   gain = 1000;
   fade = 255;
   alphafade = 1;
@@ -239,12 +268,12 @@ void p5setup(){
   strk = 0;
   startZ = 0;
   
-  
+  //these are all sliders in controlP5. It has man other ui elements to choose from
   cp5.addSlider("hRez")
     .setPosition(10, height*0.6)
     .setSize(100, 10)
-    .setRange(in.bufferSize()/10,10)
-    .setValue(50)
+    .setRange(in.bufferSize()/10,10) //min and max values
+    .setValue(50) //initial value
     ;
   
   cp5.addSlider("gain")
